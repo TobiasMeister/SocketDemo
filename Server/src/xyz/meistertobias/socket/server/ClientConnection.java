@@ -20,7 +20,7 @@ public class ClientConnection extends Thread {
 	private final Socket socket;
 	private final ServerController controller;
 	
-	private boolean alive;
+	private volatile boolean closed = false;
 	
 	public ClientConnection(Socket socket, ServerController controller) {
 		this.socket = socket;
@@ -50,9 +50,12 @@ public class ClientConnection extends Thread {
 	};
 	
 	@Override
+	public synchronized void start() {
+		if (!closed) super.start();
+	}
+	
+	@Override
 	public void run() {
-		alive = true;
-		
 		try (var in = socket.getInputStream();
 			 var out = socket.getOutputStream();
 			 var dataOut = buildOutput(out);
@@ -141,7 +144,7 @@ public class ClientConnection extends Thread {
 				
 				// Close socket on server side if client left
 				if (socket.isClosed()) {
-					alive = false;
+					closed = true;
 				}
 			}
 			
@@ -154,10 +157,10 @@ public class ClientConnection extends Thread {
 		} catch (NoSuchFieldException e) {
 			// Ignore, shouldn't happen
 		} finally {
-			alive = false;
+			closed = true;
 			if (socket != null && !socket.isClosed()) {
 				try {
-					alive = false;
+					closed = true;
 					socket.close();
 				} catch (IOException e) {
 					e.printStackTrace();
@@ -166,6 +169,7 @@ public class ClientConnection extends Thread {
 		}
 	}
 	
+	@SuppressWarnings("unchecked")
 	private static <T> T readParameter(ObjectInputStream inputStream, Class<T> type) throws IOException, ClassNotFoundException {
 		if (type == boolean.class) {
 			return (T) (Object) inputStream.readBoolean();
@@ -190,7 +194,7 @@ public class ClientConnection extends Thread {
 		}
 	}
 	
-	private static <T> void writeParameter(ObjectOutputStream outputStream, Class<T> type, Object value) throws IOException, ClassNotFoundException {
+	private static <T> void writeParameter(ObjectOutputStream outputStream, Class<T> type, Object value) throws IOException {
 		if (type == boolean.class) {
 			outputStream.writeBoolean((boolean) value);
 		} else if (type == byte.class) {
